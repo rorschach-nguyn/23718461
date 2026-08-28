@@ -1,5 +1,5 @@
 # TH1 - PHAN NHAT NGUYEN - 23718461 - #884511
-URL: https://github.com/your-username/23718461.git
+URL: https://github.com/rorschach-nguyn/23718461.git
 
 ## Thông tin sinh viên & Bài thi
 - **Họ và tên:** PHAN NHAT NGUYEN
