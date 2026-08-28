@@ -6,17 +6,18 @@ import {
   StyleSheet,
   TextInputProps,
   ViewStyle,
+  StyleProp,
 } from 'react-native';
 import Typography from './Typography';
 import { COLORS, SIZES } from '@constants/theme';
 
-interface Props extends TextInputProps {
+export interface ShopInputProps extends TextInputProps {
   label?: string;
   error?: string;
-  containerStyle?: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
-const ShopInput = ({ label, error, containerStyle, style, ...rest }: Props) => {
+const ShopInput = ({ label, error, containerStyle, style, ...rest }: ShopInputProps) => {
   return (
     <View style={[styles.wrap, containerStyle]}>
       {label ? (

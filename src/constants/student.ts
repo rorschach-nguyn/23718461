@@ -26,3 +26,5 @@ export function examStamp(): string {
   }
   return String(Math.abs(h) % 1000000).padStart(6, '0');
 }
+
+export default STUDENT;
