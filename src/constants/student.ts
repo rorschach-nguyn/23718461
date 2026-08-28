@@ -28,3 +28,4 @@ export function examStamp(): string {
 }
 
 export default STUDENT;
+

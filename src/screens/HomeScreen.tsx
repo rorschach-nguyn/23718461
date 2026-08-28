@@ -1,11 +1,13 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useReducer, useRef } from 'react';
 import {
   View,
   Image,
   FlatList,
   Pressable,
   ActivityIndicator,
+  Modal,
+  Alert,
   StyleSheet,
   ImageBackground,
 } from 'react-native';
@@ -44,22 +46,43 @@ const CHIP_LIST_REVERSED: ChipItem[] = [
   { id: 'all', label: 'Tất cả' },
 ];
 
+// Reducer quản lý số lượng đặt món theo yêu cầu Câu 3a
+type QtyAction = { type: 'ADD' } | { type: 'REMOVE' } | { type: 'RESET' };
+
+function qtyReducer(state: number, action: QtyAction): number {
+  switch (action.type) {
+    case 'ADD':
+      return state + 1;
+    case 'REMOVE':
+      return Math.max(1, state - 1); // Bấm trừ khi đang 1 thì vẫn giữ 1
+    case 'RESET':
+      return 1;
+    default:
+      return state;
+  }
+}
+
 const HomeScreen = () => {
   const { colors, isDark, toggleTheme } = useTheme();
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
-  
-  // Chip khởi tạo: lấy chip đầu tiên theo thứ tự
+
+  // Chip khởi tạo theo biến thể số cuối
   const chips = VARIANT.chipsReversed ? CHIP_LIST_REVERSED : CHIP_LIST_STANDARD;
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>(chips[0].id);
+
+  // Quản lý Modal Đặt món (Giao diện 2 - Câu 3a)
+  const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [quantity, dispatchQty] = useReducer(qtyReducer, 1);
 
   const { timeLeft, isFinished } = useCountdown(FLASH_SECONDS);
   const stamp = useMemo(() => examStamp(), []);
   const aliveRef = useRef(true);
 
-  // Định dạng thời gian Flash Sale mm:ss
+  // Định dạng mm:ss cho đồng hồ Flash Sale
   const flashTimeFormatted = useMemo(() => {
     const m = Math.floor(timeLeft / 60)
       .toString()
@@ -68,7 +91,7 @@ const HomeScreen = () => {
     return `${m}:${s}`;
   }, [timeLeft]);
 
-  // Gọi API lấy danh sách món
+  // Tải danh sách món từ API
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -96,7 +119,7 @@ const HomeScreen = () => {
     };
   }, [load]);
 
-  // Lọc sản phẩm theo keyword và category bằng useMemo
+  // Lọc sản phẩm bằng useMemo
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
       const matchKeyword = item.title.toLowerCase().includes(keyword.trim().toLowerCase());
@@ -106,10 +129,38 @@ const HomeScreen = () => {
     });
   }, [products, keyword, selectedCategory]);
 
-  // Placeholder xử lý bấm nút Đặt (sẽ tích hợp Modal ở Câu 3)
-  const handlePressProduct = useCallback((item: ProductItem) => {
-    console.log('Chọn món:', item.title);
+  // Mở Modal đặt món khi bấm Đặt hoặc bấm vào Card món ăn
+  const handleOpenModal = useCallback((item: ProductItem) => {
+    setSelectedProduct(item);
+    dispatchQty({ type: 'RESET' });
+    setModalVisible(true);
   }, []);
+
+  // Đóng Modal (không hiện Alert)
+  const handleCloseModal = useCallback(() => {
+    setModalVisible(false);
+    dispatchQty({ type: 'RESET' });
+    setSelectedProduct(null);
+  }, []);
+
+  // Xác nhận đặt món (Câu 3a) -> Alert hệ thống -> Đóng modal, reset về 1
+  const handleConfirmOrder = useCallback(() => {
+    if (!selectedProduct) return;
+
+    Alert.alert(
+      `CampusMart · ${STUDENT.mssv}`,
+      `${STUDENT.hoTen} (#${stamp}) đã ghi nhận: ${selectedProduct.title} × ${quantity}. Nhận tại quầy KTX.`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            handleCloseModal();
+          },
+        },
+      ],
+      { cancelable: false }
+    );
+  }, [selectedProduct, quantity, stamp, handleCloseModal]);
 
   // Khối (0) Watermark Dòng tên TH1
   const renderWatermark = () => (
@@ -157,7 +208,7 @@ const HomeScreen = () => {
         </View>
       </View>
 
-      {/* (B) Ô tìm kiếm (Placeholder có MSSV) */}
+      {/* (B) Ô tìm kiếm */}
       <View style={styles.searchSection}>
         <ShopInput
           placeholder={`Tìm món, nước, đồ dùng — ${STUDENT.mssv}`}
@@ -255,7 +306,7 @@ const HomeScreen = () => {
             }
             renderItem={({ item }) => (
               <Pressable
-                onPress={() => handlePressProduct(item)}
+                onPress={() => handleOpenModal(item)}
                 style={[styles.productCard, { backgroundColor: colors.surface }]}
               >
                 <Image
@@ -276,7 +327,7 @@ const HomeScreen = () => {
                 </View>
                 <ShopButton
                   title="Đặt"
-                  onPress={() => handlePressProduct(item)}
+                  onPress={() => handleOpenModal(item)}
                   style={styles.orderBtn}
                   disabled={isFinished}
                 />
@@ -288,6 +339,121 @@ const HomeScreen = () => {
 
       {/* (0) Watermark ở dưới chân màn hình nếu watermarkAtTop = false */}
       {!VARIANT.watermarkAtTop && renderWatermark()}
+
+      {/* ========================================================================= */}
+      {/* GIAO DIỆN 2: MODAL ĐẶT MÓN (CÂU 3a)                                      */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType={VARIANT.modalAnimation}
+        onRequestClose={handleCloseModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            {/* Dòng tên stamp trên đầu Modal */}
+            <Typography
+              variant="small"
+              color={colors.textLight}
+              style={styles.modalStamp}
+            >
+              TH1 · {STUDENT.mssv} · {STUDENT.hoTen} · #{stamp}
+            </Typography>
+
+            {selectedProduct && (
+              <>
+                {/* Ảnh món ăn */}
+                <View style={styles.modalImageContainer}>
+                  <Image
+                    source={{ uri: selectedProduct.image }}
+                    style={styles.modalImage}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                {/* Tên món */}
+                <Typography
+                  variant="h2"
+                  color={colors.text}
+                  style={styles.modalTitle}
+                  numberOfLines={2}
+                >
+                  {selectedProduct.title}
+                </Typography>
+
+                {/* Giá tiền VNĐ */}
+                <Typography
+                  variant="h2"
+                  color={colors.primary}
+                  style={styles.modalPrice}
+                >
+                  {selectedProduct.priceVnd.toLocaleString('vi-VN')} đ
+                </Typography>
+
+                {/* Danh mục */}
+                <Typography
+                  variant="body2"
+                  color={colors.textLight}
+                  style={styles.modalCategory}
+                >
+                  Danh mục: {selectedProduct.categoryLabel}
+                </Typography>
+
+                {/* Mô tả ngắn tối đa 2 dòng */}
+                <Typography
+                  variant="small"
+                  color={colors.textLight}
+                  numberOfLines={2}
+                  style={styles.modalDesc}
+                >
+                  {selectedProduct.description}
+                </Typography>
+
+                {/* Bộ đếm số lượng: [ - ]  số  [ + ] dùng useReducer */}
+                <View style={styles.qtyContainer}>
+                  <Pressable
+                    onPress={() => dispatchQty({ type: 'REMOVE' })}
+                    style={[styles.qtyBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  >
+                    <Typography variant="h3" color={colors.primary}>
+                      −
+                    </Typography>
+                  </Pressable>
+
+                  <Typography variant="h2" color={colors.text} style={styles.qtyNumber}>
+                    {quantity}
+                  </Typography>
+
+                  <Pressable
+                    onPress={() => dispatchQty({ type: 'ADD' })}
+                    style={[styles.qtyBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  >
+                    <Typography variant="h3" color={colors.primary}>
+                      +
+                    </Typography>
+                  </Pressable>
+                </View>
+
+                {/* Nút Xác nhận đặt */}
+                <ShopButton
+                  title={isFinished ? 'Hết giờ flash-sale' : 'Xác nhận đặt'}
+                  onPress={handleConfirmOrder}
+                  disabled={isFinished}
+                  style={styles.confirmBtn}
+                />
+
+                {/* Nút Đóng */}
+                <ShopButton
+                  title="Đóng"
+                  variant="outline"
+                  onPress={handleCloseModal}
+                  style={styles.closeBtn}
+                />
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -430,6 +596,83 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     alignItems: 'center',
   },
+  // Modal styles (Giao diện 2 - Câu 3a)
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 16,
+    padding: 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  modalStamp: {
+    textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  modalImageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  modalImage: {
+    width: 110,
+    height: 110,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+  },
+  modalTitle: {
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalPrice: {
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalCategory: {
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  modalDesc: {
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  qtyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    gap: 16,
+  },
+  qtyBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyNumber: {
+    minWidth: 32,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  confirmBtn: {
+    marginBottom: 8,
+  },
+  closeBtn: {},
 });
 
 export default HomeScreen;
